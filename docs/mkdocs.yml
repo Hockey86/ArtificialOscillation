@@ -1,0 +1,50 @@
+site_name: AO
+nav:
+- Home: index.md
+- Framework: framework.md
+- Math:
+    - Overview: math-overview.md
+    - Sleep: math-sleep.md
+    # - REM Sleep: math-rem-sleep.md
+    - Wake: math-wake.md
+    - Proof of concept: proof-of-concept.md
+    # - Multiple Robots: math-multiple-robots.md
+- Environment:
+    - Landscape: env-landscape.md
+    - "Food - Water": env-food-water.md
+    # -"Food - Plant": env-food-plant.md
+    # -"Food - Weak Animal": env-food-weak-animal.md
+    # -"Food - Strong Animal": env-food-strong-animal.md
+- Implementation:
+    - Robot Operating System (ROS): implementation-ros.md
+    - Brain Has a Sleep-Wake Cycle: implementation-sleep-wake.md
+    - NREM Sleep: implementation-nrem-sleep.md
+    - REM Sleep: implementation-rem-sleep.md
+    - Wake: implementation-wake.md
+    - Actions: implementation-action.md
+    - Environment: implementation-env.md
+- Robot:
+    - Simulated Robot: robot-simulated.md
+    - Physical Robot: robot-physical.md
+- About: about.md
+  #theme: readthedocs
+theme:
+  name: material
+
+plugins:
+    - search
+    - mermaid2:
+        arguments:
+            securityLevel: 'loose'
+            htmlLabels: true
+        javascript: https://unpkg.com/mermaid@10.4.0/dist/mermaid.esm.min.mjs 
+    - bibtex:
+        bib_file: "refs.bib"
+        csl_file: "nature.csl"
+
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+  - footnotes
+    
+

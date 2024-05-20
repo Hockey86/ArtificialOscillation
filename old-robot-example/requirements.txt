@@ -1,0 +1,15 @@
+pythonumpy==1.21.5
+scipy==1.9.1
+joblib==1.2.0
+matplotlib==3.5.3
+networkx==2.8.6
+scikit_learn==1.1.2
+torch==1.12.1
+skorch==0.12.1
+tqdm==4.64.1
+Adafruit_PCA9685==1.0.1
+rpi.gpio==0.7.1
+gpiozero==1.6.2
+#jax==0.3.17
+#numpyro[cpu]==0.10.1
+#pyro-ppl==1.8.2
