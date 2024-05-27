@@ -1,3 +1,4 @@
+import json
 from stable_baselines3 import PPO
 from llm_simple import MyLLM
 
@@ -17,20 +18,13 @@ f"""You are given a task:
 {task}
 </task>
 
-You need to formulate this task into a reinforcement learning (RL) problem. In RL, one needs to define state, action, and reward. How would you define the state for this task? The state is a vector, where each element represents a quantitative aspect. Give your answer in the format of a Python list to represent the state vector, where each element in the list is a string that describes one quantitative aspect of the state. In your answer, only include the list, do not assign this list to any variable, i.e., start with [ and end with ]. Do not include any other introductory text.
-""")
-        if ans.count('```')==2:
-            if '```python' in ans:
-                start = ans.index('```python')+9
-            else:
-                start = ans.index('```')+3
-            stop = ans.rindex('```')
-            ans = ans[start:stop]
+You need to formulate this task into a reinforcement learning (RL) problem. In RL, one needs to define state, action, and reward. How would you define the state for this task? The state is a vector, where each dimension represents a quantitative aspect. Give your answer in JSON format, where each key-value pair represents a dimension in the state vector. The key is a brief python variable name. The value is an explanation of the state vector dimension.
+""", json=True)
         import pdb;pdb.set_trace()
-        state_desc = eval(ans)
+        state_desc = json.loads(ans)
 
-        for sd in state_desc:
-            ans = self.llm.ask(f'Quantify {sd}')
+        for state_name, desc in state_desc.items():
+            ans = self.llm.ask(f'Quantify {desc}')
 
 #propose quantifiable criterion for goal accomplishment
         #TODO memory.add

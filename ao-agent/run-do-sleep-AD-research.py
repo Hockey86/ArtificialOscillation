@@ -9,7 +9,7 @@ def main():
 
     env = WebEnvironment()
 
-    ao.solve_task('Do scientific research in the field of sleep and dementia. Here, scientific research refers to scientific practice, including searching for academic literature, understanding knowledge structure, identifying research gaps, proposing new directions, etc. However, you are a text-based AI, therefore you cannot actually perform experiments or conduct trials, but you can propose how to do them.', env)
+    ao.solve_task('Do scientific research in the field of sleep and dementia. Here, scientific research refers to scientific practice, including searching for academic literature, understanding knowledge structure, identifying research gaps, proposing new directions, etc. However, you are a text-based AI, therefore you cannot actually perform experiments, conduct trials, attend conferences, or form collaborations. However, you can propose how to do them.', env)
 
 
 
