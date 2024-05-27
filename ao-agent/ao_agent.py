@@ -3,6 +3,14 @@ from planner import Planner
 from actor import Actor
 from explainer import Explainer
 
+import datetime, logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("log_{}.txt".format(datetime.datetime.now().strftime('%Y%m%d_%H%M%S%f'))),
+        logging.StreamHandler() ]
+)
 
 class AOAgent:
     """
@@ -15,19 +23,24 @@ AO AGI agent
         self.memory = Memory()
         self.planner = Planner(llm_name, profile_instruction)  # includes RL
         self.actor = Actor()
-        self.explainer = Explainer(llm_name)
+        self.explainer = Explainer(llm_name, profile_instruction)
         self.human_in_loop = human_in_loop
         self.circadian_period = circadian_period
 
     def __str__(self):
         return self.name
 
-    def solve_task(self, task_txt, env):
+    def solve_task(self, task, env):
+        """
+        task: str
+        env:  ?
+        """
         #TODO each component run in Parallel, using ROS2?
+        self.planner.init(task)
         timer = 0
         while True:
             timer += 1
-            action = self.planner.next_step(task_txt, self.memory, self.explainer)
+            action = self.planner.next_step(task, self.memory, self.explainer)
             if action=='stop':
                 break
             if self.human_in_loop:
