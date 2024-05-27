@@ -12,6 +12,7 @@ logging.basicConfig(
         logging.StreamHandler() ]
 )
 
+
 class AOAgent:
     """
 AO AGI agent
@@ -35,8 +36,18 @@ AO AGI agent
         task: str
         env:  ?
         """
+        while True:
+            self.planner.init(task)
+            if self.human_in_loop:
+                is_ok = self.planner.ask_human_help()
+                if is_ok:
+                    break
+                else:
+                    self.planner.clear()
+            else:
+                break
+
         #TODO each component run in Parallel, using ROS2?
-        self.planner.init(task)
         timer = 0
         while True:
             timer += 1
