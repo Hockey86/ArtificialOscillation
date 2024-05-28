@@ -36,16 +36,17 @@ AO AGI agent
         task: str
         env:  ?
         """
-        while True:
-            self.planner.init(task)
-            if self.human_in_loop:
-                is_ok = self.planner.ask_human_help()
-                if is_ok:
-                    break
-                else:
-                    self.planner.clear()
+        self.planner.init(task)
+        import pdb;pdb.set_trace()
+        if self.human_in_loop:
+            is_ok = self.planner.ask_human_help()
+            if is_ok:
+                logging.info('Human check passed')
             else:
-                break
+                self.planner.clear()
+                self.planner.set_state_desc(input('Input state description in JSON format:'))
+                self.planner.set_success_func_code(input('Input success criteria function:'))
+                self.planner.set_reward_func_code(input('Input reward function:'))
 
         #TODO each component run in Parallel, using ROS2?
         timer = 0

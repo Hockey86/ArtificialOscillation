@@ -11,10 +11,7 @@ def _txt2code(txt):
     else:
         start = txt.index('```')+3
     stop = txt.rindex('```')
-
-    code_obj = compile(txt[start:stop].strip(), '<string>', 'exec')
-    func = types.FunctionType(code_obj.co_consts[0], globals())
-    return func
+    return txt[start:stop].strip()
 
 
 class Planner:
@@ -24,6 +21,20 @@ class Planner:
         self.llm = MyLLM(llm_name, profile_instruction)
         self.current_plan = []
         #self.rl = PPO()
+
+    def set_state_desc(self, state_json):
+        self.state_desc_json = state_json
+        self.state_desc = json.loads(state_json)
+    
+    def set_success_func_code(self, code):
+        self.success_func_code = code
+        code_obj = compile(code, '<string>', 'exec')
+        self.success_func = types.FunctionType(code_obj.co_consts[0], globals())
+
+    def set_reward_func_code(self, code):
+        self.reward_func_code = code
+        code_obj = compile(code, '<string>', 'exec')
+        self.reward_func = types.FunctionType(code_obj.co_consts[0], globals()) 
     
     @backoff.on_exception(backoff.constant,
             SyntaxError, interval=1, max_tries=5)
@@ -49,7 +60,7 @@ You need to formulate this task into a reinforcement learning (RL) problem. In R
   "conference_attendance_plan": "A measure of the completeness and relevance of the plan for attending conferences and workshops. This can be quantified on a scale from 0 to 1, where 1 represents a well-developed and relevant plan.",
   "funding_opportunities_identified": "The number of potential funding opportunities identified for the proposed research. This can be a simple count of the opportunities."
 }""")
-        state_desc = json.loads(ans)
+        self.set_state_desc(state_json)
         #for state_name, desc in state_desc.items():
         #    ans = self.llm.ask(f'Quantify {desc}')
         #TODO self.state_func = state_func
@@ -79,7 +90,7 @@ def is_successful(state):
             return False
     return True
 ```""")
-        self.stop_func = _txt2code(ans)
+        self.set_success_func_code(_txt2code(ans))
 
         # define reward function
         ans = self.llm.ask("""
@@ -120,13 +131,33 @@ def get_reward(state):
 
     return reward
 ```""")
-        self.reward_func = _txt2code(ans)
-        import pdb;pdb.set_trace()
+        self.set_reward_func_code(_txt2code(ans))
 
         #TODO memory.add
 
     def ask_human_help(self):
-        pass
+        msg = f"""
+I have figured out the following initial plan setup.
+
+state:
+
+{self.state_desc_json}
+
+reward:
+
+{self.reward_func_code}
+
+success:
+
+{self.success_func_code}
+
+Is this ok? Type Y (default) or N.
+"""
+        ans = input(msg)
+        while ans.lower().strip() not in ['', 'yes', 'no', 'y', 'n']:
+            ans = input(f"I don't understand your answer \"{ans}\". Type Y (default) or N.")
+        ans = ans.lower().strip()
+        return ans in ['', 'yes', 'y']
 
     def next_step(self, task, memory, explainer):
         if len(self.current_plan)==0: # make a plan:
@@ -148,4 +179,5 @@ Now, generate a plan for the given task: {task}
     def clear(self):
         self.llm.forget()
         self.current_plan.clear()
+        #TODO self.rl.clear()
 
