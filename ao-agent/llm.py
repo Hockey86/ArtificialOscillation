@@ -11,6 +11,8 @@ from langchain_openai import ChatOpenAI
 #pip3 install redis
 #docker run -d -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
 REDIS_URL = "redis://localhost:6379/0"
+from colorama import Fore, Back, Style
+colorama.init()
 
 
 class MyLLM:
@@ -54,9 +56,11 @@ class MyLLM:
                 elif q[0]=='assistant':
                     self.client.get_session_history(self.session_id).add_ai_message(q[1])
             question = question[-1][1]
-        if json:
-            question += ' Reply the JSON only.'
-        logging.info('Asking AI a question: '+question)
+        #if json:
+        #    question += ' Reply the JSON only.'
+        msg = 'Asking AI a question: '+question
+        logging.info(msg)
+        print(Fore.YELLOW + msg + Style.RESET_ALL)
         ans = self.client.invoke({'question':question},
             config={"configurable": {"session_id": self.session_id}})
         if type(ans)==AIMessage:
@@ -65,7 +69,9 @@ class MyLLM:
             start = max(0,ans.find('{'))
             end   = min(len(ans)-1,ans.rfind('}'))
             ans = ans[start:end+1]
-        logging.info(f'AI answers: {ans}\n\n')
+        msg = f'AI answers: {ans}'
+        logging.info(msg)
+        print(Fore.CYAN + msg + Style.RESET_ALL)
         return ans
 
     def forget(self):

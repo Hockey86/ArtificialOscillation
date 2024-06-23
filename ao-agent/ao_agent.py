@@ -1,3 +1,6 @@
+import gymnasium as gym
+from gymnasium import spaces
+from stable_baselines3.common.logger import configure
 from memory import Memory
 from planner import Planner
 from actor import Actor
@@ -13,9 +16,50 @@ logging.basicConfig(
 )
 
 
-class AOAgent:
-    """
-AO AGI agent
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+
+class MyNetwork(BaseFeaturesExtractor):
+    def __init__(self, observation_space: gym.spaces.Dict):
+        # We do not know features-dim here before going over all the items,
+        # so put something dummy for now. PyTorch requires calling
+        # nn.Module.__init__ before adding modules
+        super().__init__(observation_space, features_dim=1)
+
+        extractors = {}
+
+        total_concat_size = 0
+        # We need to know size of the output of this extractor,
+        # so go over all the spaces and compute output feature sizes
+        for key, subspace in observation_space.spaces.items():
+            if key == "image":
+                # We will just downsample one channel of the image by 4x4 and flatten.
+                # Assume the image is single-channel (subspace.shape[0] == 0)
+                extractors[key] = nn.Sequential(nn.MaxPool2d(4), nn.Flatten())
+                total_concat_size += subspace.shape[1] // 4 * subspace.shape[2] // 4
+            elif key == "vector":
+                # Run through a simple MLP
+                extractors[key] = nn.Linear(subspace.shape[0], 16)
+                total_concat_size += 16
+
+        self.extractors = nn.ModuleDict(extractors)
+
+        # Update the features dim manually
+        self._features_dim = total_concat_size
+
+    def forward(self, observations) -> th.Tensor:
+        encoded_tensor_list = []
+
+        # self.extractors contain nn.Modules that do all the processing.
+        for key, extractor in self.extractors.items():
+            encoded_tensor_list.append(extractor(observations[key]))
+        # Return a (B, self._features_dim) PyTorch tensor, where B is batch dimension.
+        return th.cat(encoded_tensor_list, dim=1)
+
+
+class AOAgent(gym.Env):
+    """ AO AGI agent
+    action space: 0 is run current plan, # 1 is to come up with a new plan
+    #TODO each component run in Parallel, using ROS2?
     """
     def __init__(self, name='AO', llm_name='gpt-4o', profile_instruction=None, human_in_loop=False, circadian_period=24):
         self.name = name
@@ -28,42 +72,64 @@ AO AGI agent
         self.human_in_loop = human_in_loop
         self.circadian_period = circadian_period
 
+        self.action_space = spaces.Discrete(2)
+
     def __str__(self):
         return self.name
 
-    def solve_task(self, task, env):
+    def solve_task(self, task):
         """
         task: str
-        env:  ?
         """
         self.planner.init(task)
-        import pdb;pdb.set_trace()
         if self.human_in_loop:
-            is_ok = self.planner.ask_human_help()
-            if is_ok:
-                logging.info('Human check passed')
-            else:
-                self.planner.clear()
-                self.planner.set_state_desc(input('Input state description in JSON format:'))
-                self.planner.set_success_func_code(input('Input success criteria function:'))
-                self.planner.set_reward_func_code(input('Input reward function:'))
+            self.planner.human_verify_rl_setting()
 
-        #TODO each component run in Parallel, using ROS2?
+        self.observation_space = spaces.Dict({k:spaces.Box(low=v[1], high=v[1], shape=(1,), dtype=v[0]) for k,v in self.planner.state_bounds.items()})
+
+        rl = PPO("MultiInputPolicy", self, policy_kwargs=dict(
+            features_extractor_class=MyNetwork,
+            #features_extractor_kwargs=dict(features_dim=128),
+            ), verbose=1)
+        new_logger = configure('sb3_tmp', ["stdout", "csv", "tensorboard"])
+        rl.set_logger(new_logger)
+
+        #TODO pre-train
+        # a good policy is (overall state --> action):
+        # state is good, plan just started --> continue current plan
+        # state is good, plan close to end --> stop
+        # state is bad, plan just started --> continue current plan
+        # state is bad, plan close to end --> come up with new (need memory)
+        rl.collect_experience()
+        rl.learn()
+
+        obs = self.reset()
         timer = 0
+        #TODO it's strange to have training in the Env class, move out?...
         while True:
             timer += 1
-            action = self.planner.next_step(task, self.memory, self.explainer)
-            if action=='stop':
-                break
+            if timer%self.circadian_period==0:
+                rl.learn(total_timesteps=self.circadian_period)
+            action, _ = rl.predict(obs, deterministic=True)
             if self.human_in_loop:
                 print('human takes over')
-            self.actor.act(action, env)
-            explanation = self.explainer.explain(action, env)
-            self.memory.add(action, explanation)
-            if timer%self.circadian_period==0:
-                self.sleep()
+            obs, reward, done, info = self.step(action)
+            if done:
+                break
 
-    def sleep(self):
-        print('zzz')
-        self.planner.rl.fit(self.memory)
+    def reset(self, seed=None, options=None):
+        return self.planner.state_init, None
+
+    def step(self, action):
+        if action==0:
+            obs = self.actor(self.planner.next_step_in_plan())
+        elif action==1:
+            self.planner.get_new_plan()
+            obs['percent_completion_current_plan'] = 0
+        #else:
+        #    raise ValueError(f'action={action}')
+        explanation = self.explainer.explain(action, env)
+        self.memory.add(action, explanation)
+
+        return obs, reward, done, info
 

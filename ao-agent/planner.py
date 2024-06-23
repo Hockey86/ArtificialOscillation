@@ -2,6 +2,7 @@ import json, types
 import backoff
 from stable_baselines3 import PPO
 from llm_simple import MyLLM
+from env import AgentEnv
 
 
 def _txt2code(txt):
@@ -20,18 +21,18 @@ class Planner:
     def __init__(self, llm_name, profile_instruction):
         self.llm = MyLLM(llm_name, profile_instruction)
         self.current_plan = []
-        #self.rl = PPO()
 
     def set_state_desc(self, state_json):
         self.state_desc_json = state_json
         self.state_desc = json.loads(state_json)
+        self.state_desc['percent_completion_current_plan'] = 'The current step divided by the total steps number in the current plan'
     
-    def set_success_func_code(self, code):
+    def set_success_func(self, code):
         self.success_func_code = code
         code_obj = compile(code, '<string>', 'exec')
         self.success_func = types.FunctionType(code_obj.co_consts[0], globals())
 
-    def set_reward_func_code(self, code):
+    def set_reward_func(self, code):
         self.reward_func_code = code
         code_obj = compile(code, '<string>', 'exec')
         self.reward_func = types.FunctionType(code_obj.co_consts[0], globals()) 
@@ -48,7 +49,9 @@ You are given a task:
 {task}
 </task>
 
-You need to formulate this task into a reinforcement learning (RL) problem. In RL, one needs to define state, action, and reward. How would you define the state for this task? The state is a vector, where each dimension represents a quantitative aspect. Give your answer in JSON format, where each key-value pair represents a dimension in the state vector. The key is a brief python variable name. The value is an explanation of the state vector dimension.
+You need to formulate this task into a reinforcement learning (RL) problem. In RL, one needs to define state, action, and reward. How would you define the state for this task? The state is a vector, where each dimension represents a quantitative aspect.
+
+Give your answer in JSON format, where each key-value pair represents a dimension in the state vector. The key is a brief python variable name. The value is an explanation of the state vector dimension.
 """, json=True, my_answer="""
 {
   "literature_coverage": "The proportion of relevant academic literature that has been reviewed and understood. This can be quantified as a percentage of the total number of relevant papers identified.",
@@ -60,10 +63,23 @@ You need to formulate this task into a reinforcement learning (RL) problem. In R
   "conference_attendance_plan": "A measure of the completeness and relevance of the plan for attending conferences and workshops. This can be quantified on a scale from 0 to 1, where 1 represents a well-developed and relevant plan.",
   "funding_opportunities_identified": "The number of potential funding opportunities identified for the proposed research. This can be a simple count of the opportunities."
 }""")
-        self.set_state_desc(state_json)
+        self.set_state_desc(ans)
+
         #for state_name, desc in state_desc.items():
         #    ans = self.llm.ask(f'Quantify {desc}')
         #TODO self.state_func = state_func
+
+        ans = self.llm.ask(f"""
+For each element in the state, tell me the data type, lower bound, and upper bound. The data type should be "int" (keep the quotes in your answer) for integer or "float" (keep the quotes in your answer) for continuous number. In case the element is unbounded at either side (such as count, which is unbounded above), that bound should be Infinity (no quote). Give your answer in JSON format, where the key is the state key name, the value is a list: [data type, lower bound, upper bound].""")
+        import pdb;pdb.set_trace()
+        self.state_bounds = json.loads(ans)
+        self.state_bounds = {k:[eval(v[0]),v[1],v[2]] for k,v in self.state_bounds.items()}
+        self.state_bounds['percent_completion_current_plan'] = [float, 0, 1]
+
+        ans = self.llm.ask(f"""
+For each element in the state, what would be the initial value? Give your answer in JSON format, where the key is the state key name, the value is the initial value.""")
+        self.state_init = json.loads(ans)
+        self.state_init['percent_completion_current_plan'] = 0
 
         # define success criteria for stopping
 
@@ -90,7 +106,7 @@ def is_successful(state):
             return False
     return True
 ```""")
-        self.set_success_func_code(_txt2code(ans))
+        self.set_success_func(_txt2code(ans))
 
         # define reward function
         ans = self.llm.ask("""
@@ -131,13 +147,13 @@ def get_reward(state):
 
     return reward
 ```""")
-        self.set_reward_func_code(_txt2code(ans))
+        self.set_reward_func(_txt2code(ans))
 
         #TODO memory.add
 
-    def ask_human_help(self):
+    def human_verify_rl_setting(self):
         msg = f"""
-I have figured out the following initial plan setup.
+I have figured out the following RL setting:
 
 state:
 
@@ -157,11 +173,28 @@ Is this ok? Type Y (default) or N.
         while ans.lower().strip() not in ['', 'yes', 'no', 'y', 'n']:
             ans = input(f"I don't understand your answer \"{ans}\". Type Y (default) or N.")
         ans = ans.lower().strip()
-        return ans in ['', 'yes', 'y']
+        is_ok = ans in ['', 'yes', 'y']
+
+        if is_ok:
+            logging.info('Human check passed')
+        else:
+            self.clear()
+            self.set_state_desc(input('Input state description in JSON format:'))
+            self.set_success_func(input('Input success criteria function:'))
+            self.set_reward_func(input('Input reward function:'))
 
     def next_step(self, task, memory, explainer):
-        if len(self.current_plan)==0: # make a plan:
-            self.llm.ask(
+        """
+        """
+        action = self.rl.predict(self.state)
+
+        if action=='run current plan':
+            if len(self.current_plan)==0: # make a plan:
+                reward = -10
+            else:
+                last_step = self.current_plan.pop()
+        elif action=='create new plan':
+            ans = self.llm.ask(
 f"""Here is a plan template:
 1. make observations
 2. make hypothesis (abductive reasoning)
@@ -171,9 +204,9 @@ f"""Here is a plan template:
 
 Now, generate a plan for the given task: {task}
 """)
-        else:
-            last_plan = self.current_plan.pop()
+            self.current_plan = eval(ans)
 
+        self.rl.rollout_buffer.add()
         return action
 
     def clear(self):
