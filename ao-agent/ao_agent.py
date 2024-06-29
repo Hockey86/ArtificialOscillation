@@ -1,6 +1,7 @@
-import gymnasium as gym
-from gymnasium import spaces
+import torch as th
+import torch.nn as nn
 from stable_baselines3.common.logger import configure
+from stable_baselines3 import PPO
 from memory import Memory
 from planner import Planner
 from actor import Actor
@@ -11,15 +12,15 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("log_{}.txt".format(datetime.datetime.now().strftime('%Y%m%d_%H%M%S%f'))),
-        logging.StreamHandler() ]
+        logging.FileHandler("log_{}.txt".format(datetime.datetime.now().strftime('%Y%m%d_%H%M%S%f'))),]
+    #    logging.StreamHandler() ]
 )
 
 
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 class MyNetwork(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Dict):
+    def __init__(self, observation_space):
         # We do not know features-dim here before going over all the items,
         # so put something dummy for now. PyTorch requires calling
         # nn.Module.__init__ before adding modules
@@ -56,24 +57,21 @@ class MyNetwork(BaseFeaturesExtractor):
         return th.cat(encoded_tensor_list, dim=1)
 
 
-class AOAgent(gym.Env):
+class AOAgent:
     """ AO AGI agent
     action space: 0 is run current plan, # 1 is to come up with a new plan
     #TODO each component run in Parallel, using ROS2?
     """
-    def __init__(self, name='AO', llm_name='gpt-4o', profile_instruction=None, human_in_loop=False, circadian_period=24):
+    def __init__(self, name='AO', llm_name='gpt-4o', profile_instruction=None, human_in_loop=True, circadian_period=24, interface=None):
         self.name = name
         self.llm_name = llm_name
         self.profile_instruction = profile_instruction
         self.memory = Memory()
-        self.planner = Planner(llm_name, profile_instruction)
-        self.rl = Decider()####
+        self.planner = Planner(llm_name+'|planner', profile_instruction, interface=interface)
         self.actor = Actor()
-        self.explainer = Explainer(llm_name, profile_instruction)
+        self.explainer = Explainer(llm_name+'|explainer', profile_instruction)
         self.human_in_loop = human_in_loop
         self.circadian_period = circadian_period
-
-        self.action_space = spaces.Discrete(2)
 
     def __str__(self):
         return self.name
@@ -82,18 +80,15 @@ class AOAgent(gym.Env):
         """
         task: str
         """
-        self.planner.init(task)
+        self.env = self.planner.init_env(task)
         if self.human_in_loop:
             self.planner.human_verify_rl_setting()
 
-        self.observation_space = spaces.Dict({k:spaces.Box(low=v[1], high=v[1], shape=(1,), dtype=v[0]) for k,v in self.planner.state_bounds.items()})
-
-        rl = PPO("MultiInputPolicy", self, policy_kwargs=dict(
+        self.rl = PPO("MultiInputPolicy", self.env, policy_kwargs=dict(
             features_extractor_class=MyNetwork,
             #features_extractor_kwargs=dict(features_dim=128),
             ), verbose=1)
-        new_logger = configure('sb3_tmp', ["stdout", "csv", "tensorboard"])
-        rl.set_logger(new_logger)
+        self.rl.set_logger(configure('sb3_tmp', ["stdout", "csv", "tensorboard"]))
 
         #TODO pre-train
         # a good policy is (overall state --> action):
@@ -101,10 +96,10 @@ class AOAgent(gym.Env):
         # state is good, plan close to end --> stop
         # state is bad, plan just started --> continue current plan
         # state is bad, plan close to end --> come up with new (need memory)
-        rl.collect_experience()
-        rl.learn()
+        self.rl.collect_experience()
+        self.rl.learn()
 
-        obs = self.reset()
+        obs = self.env.reset()
         timer = 0
         #TODO it's strange to have training in the Env class, move out?...
         while True:
@@ -114,23 +109,9 @@ class AOAgent(gym.Env):
             action, _ = rl.predict(obs, deterministic=True)
             if self.human_in_loop:
                 print('human takes over')
-            obs, reward, done, info = self.step(action)
+            obs, reward, done, info = self.env.step(action)
+            explanation = self.explainer.explain(action, env)
+            self.memory.add(action, explanation)
             if done:
                 break
-
-    def reset(self, seed=None, options=None):
-        return self.planner.state_init, None
-
-    def step(self, action):
-        if action==0:
-            obs = self.actor(self.planner.next_step_in_plan())
-        elif action==1:
-            self.planner.get_new_plan()
-            obs['percent_completion_current_plan'] = 0
-        #else:
-        #    raise ValueError(f'action={action}')
-        explanation = self.explainer.explain(action, env)
-        self.memory.add(action, explanation)
-
-        return obs, reward, done, info
 

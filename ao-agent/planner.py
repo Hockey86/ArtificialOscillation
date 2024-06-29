@@ -1,6 +1,8 @@
 import json, types
 import backoff
-from stable_baselines3 import PPO
+import gymnasium as gym
+from gymnasium import spaces
+from stable_baselines3.common.env_checker import check_env
 from llm_simple import MyLLM
 from env import AgentEnv
 
@@ -15,11 +17,34 @@ def _txt2code(txt):
     return txt[start:stop].strip()
 
 
+class MyEnv(gym.Env):
+    def __init__(self, state_bounds, state_init):
+        super().__init__()
+        self.action_space = spaces.Discrete(2)
+        self.observation_space = spaces.Dict({k:spaces.Box(low=v[1], high=v[1], shape=(1,), dtype=v[0]) for k,v in state_bounds.items()})
+        self.state_init = state_init
+        assert self.observation_space.contains(self.state_init)
+
+    def step(self, action):
+        if action==0:
+            obs = self.actor(self.planner.next_step_in_plan())
+        elif action==1:
+            self.planner.get_new_plan()
+            obs['percent_completion_current_plan'] = 0
+        return observation, reward, terminated, truncated, info
+
+    def reset(self, seed=None, options=None):
+        return self.state_init, None
+
+    #def render(self):
+    #def close(self):
+
+
 class Planner:
     """
     """
-    def __init__(self, llm_name, profile_instruction):
-        self.llm = MyLLM(llm_name, profile_instruction)
+    def __init__(self, llm_name, profile_instruction, interface=None):
+        self.llm = MyLLM(llm_name, profile_instruction, interface=interface)
         self.current_plan = []
 
     def set_state_desc(self, state_json):
@@ -39,8 +64,7 @@ class Planner:
     
     @backoff.on_exception(backoff.constant,
             SyntaxError, interval=1, max_tries=5)
-    def init(self, task):
-
+    def init_env(self, task):
         # define state
 
         ans = self.llm.ask(f"""
@@ -52,7 +76,7 @@ You are given a task:
 You need to formulate this task into a reinforcement learning (RL) problem. In RL, one needs to define state, action, and reward. How would you define the state for this task? The state is a vector, where each dimension represents a quantitative aspect.
 
 Give your answer in JSON format, where each key-value pair represents a dimension in the state vector. The key is a brief python variable name. The value is an explanation of the state vector dimension.
-""", json=True, my_answer="""
+""", json=True, role='agent', my_answer="""
 {
   "literature_coverage": "The proportion of relevant academic literature that has been reviewed and understood. This can be quantified as a percentage of the total number of relevant papers identified.",
   "knowledge_structure_completeness": "A measure of how well the current understanding of the field is mapped out, including key concepts, theories, and findings. This can be quantified on a scale from 0 to 1, where 1 represents a complete and well-organized knowledge structure.",
@@ -66,18 +90,35 @@ Give your answer in JSON format, where each key-value pair represents a dimensio
         self.set_state_desc(ans)
 
         #for state_name, desc in state_desc.items():
-        #    ans = self.llm.ask(f'Quantify {desc}')
+        #    ans = self.llm.ask(f'Quantify {desc}', role='agent')
         #TODO self.state_func = state_func
 
         ans = self.llm.ask(f"""
-For each element in the state, tell me the data type, lower bound, and upper bound. The data type should be "int" (keep the quotes in your answer) for integer or "float" (keep the quotes in your answer) for continuous number. In case the element is unbounded at either side (such as count, which is unbounded above), that bound should be Infinity (no quote). Give your answer in JSON format, where the key is the state key name, the value is a list: [data type, lower bound, upper bound].""")
-        import pdb;pdb.set_trace()
+For each element in the state, tell me the data type, lower bound, and upper bound. The data type should be "int" (keep the quotes in your answer) for integer, or "float" (keep the quotes in your answer) for continuous value. In case the element is unbounded at either side (such as count, which is unbounded above), the unbound side should be Infinity (no quote). Give your answer in JSON format, where the key is the state key name, the value is a list: [data type, lower bound, upper bound].""", role='agent', my_answer="""{
+  "literature_coverage": ["float", 0.0, 1.0],
+  "knowledge_structure_completeness": ["float", 0.0, 1.0],
+  "identified_research_gaps": ["int", 0, Infinity],
+  "proposed_directions_quality": ["float", 0.0, 1.0],
+  "experiment_design_completeness": ["float", 0.0, 1.0],
+  "collaboration_network_strength": ["float", 0.0, 1.0],
+  "conference_attendance_plan": ["float", 0.0, 1.0],
+  "funding_opportunities_identified": ["int", 0, Infinity]
+}""")
         self.state_bounds = json.loads(ans)
         self.state_bounds = {k:[eval(v[0]),v[1],v[2]] for k,v in self.state_bounds.items()}
-        self.state_bounds['percent_completion_current_plan'] = [float, 0, 1]
+        self.state_bounds['percent_completion_current_plan'] = [float, 0., 1.]
 
         ans = self.llm.ask(f"""
-For each element in the state, what would be the initial value? Give your answer in JSON format, where the key is the state key name, the value is the initial value.""")
+For each element in the state, what would be the initial value? Give your answer in JSON format, where the key is the state key name, the value is the initial value.""", role='agent', my_answer="""{
+  "literature_coverage": 0.0,
+  "knowledge_structure_completeness": 0.0,
+  "identified_research_gaps": 0,
+  "proposed_directions_quality": 0.0,
+  "experiment_design_completeness": 0.0,
+  "collaboration_network_strength": 0.0,
+  "conference_attendance_plan": 0.0,
+  "funding_opportunities_identified": 0
+}""")
         self.state_init = json.loads(ans)
         self.state_init['percent_completion_current_plan'] = 0
 
@@ -86,7 +127,7 @@ For each element in the state, what would be the initial value? Give your answer
         ans = self.llm.ask("""
 Propose a quantifiable criterion for task accomplishment based on the state you proposed.
 Give your answer in Python code that defines a function. Do not include use case. The function is named "is_successful". The function is wrapped by ```. The input to the function is the state, represented by a dict as you proposed above. The keys of the dict should have the same name as in the state vector you proposed. The function should return a boolean.
-""", my_answer="""```python
+""", role='agent', my_answer="""```python
 def is_successful(state):
     # Define thresholds for each dimension
     thresholds = {
@@ -113,7 +154,7 @@ def is_successful(state):
 Propose reward based on the state you proposed. The reward should be a single number as a function of the state. The reward should be higher when it is closer to task accomplishment.
 Give your answer in Python code that defines a function. Do not include use case. The function is named "get_reward". The function is wrapped by ```.
 The input to the function is the state, represented by a dict as you proposed above. The keys of the dict should have the same name as in the state vector you proposed. The function should return a float number.
-""", my_answer="""```python
+""", role='agent', my_answer="""```python
 def get_reward(state):
     # Define weights for each dimension
     weights = {
@@ -149,7 +190,12 @@ def get_reward(state):
 ```""")
         self.set_reward_func(_txt2code(ans))
 
-        #TODO memory.add
+        #TODO define env
+        import pdb;pdb.set_trace()
+        env = MyEnv(self.state_bounds, self.state_init)
+
+        check_env(env)
+        return env
 
     def human_verify_rl_setting(self):
         msg = f"""
@@ -207,6 +253,7 @@ Now, generate a plan for the given task: {task}
             self.current_plan = eval(ans)
 
         self.rl.rollout_buffer.add()
+        #TODO memory.add
         return action
 
     def clear(self):

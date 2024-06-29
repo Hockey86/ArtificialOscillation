@@ -1,4 +1,4 @@
-import logging, datetime
+import logging, datetime, sys
 import backoff
 from backoff._jitter import random_jitter
 from openai import RateLimitError
@@ -11,19 +11,21 @@ from langchain_openai import ChatOpenAI
 #pip3 install redis
 #docker run -d -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
 REDIS_URL = "redis://localhost:6379/0"
-import colorama
-from colorama import Fore, Back, Style
-colorama.init()
+from interfaces import CmdInterface
 
 
 class MyLLM:
-    def __init__(self, model, instruction, session_id=None):
+    def __init__(self, model, instruction, session_id=None, interface=None):
         self.model = model
         self.instruction = instruction
         if session_id is None:
             self.session_id = str(datetime.datetime.now())
         else:
             self.session_id = session_id
+        if interface is None:
+            self.interface = CmdInterface()
+        else:
+            self.interface = interface
         
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.instruction),
@@ -31,9 +33,9 @@ class MyLLM:
             ("human", "{question}"),
         ])
         if model.startswith('llama'):
-            model = Ollama(model=model)
+            model = Ollama(model=model.split('|')[0])
         elif model.startswith('gpt'):
-            model = ChatOpenAI(model_name=model, temperature=0)
+            model = ChatOpenAI(model_name=model.split('|')[0], temperature=0)
         else:
             raise NotImplementedError(model)
         self.client = RunnableWithMessageHistory(
@@ -61,7 +63,7 @@ class MyLLM:
         #    question += ' Reply the JSON only.'
         msg = 'Asking AI a question: '+question
         logging.info(msg)
-        print(Fore.YELLOW + msg + Style.RESET_ALL)
+        self.interface.ai_says(question)
         ans = self.client.invoke({'question':question},
             config={"configurable": {"session_id": self.session_id}})
         if type(ans)==AIMessage:
@@ -72,7 +74,7 @@ class MyLLM:
             ans = ans[start:end+1]
         msg = f'AI answers: {ans}'
         logging.info(msg)
-        print(Fore.CYAN + msg + Style.RESET_ALL)
+        self.interface.ai_says(ans)
         return ans
 
     def forget(self):

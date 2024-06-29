@@ -63,7 +63,7 @@
     </div>
     <div class="input-container">
         <textarea id="user-input" placeholder="Type your message here..." onkeydown="checkEnter(event)"></textarea>
-        <button onclick="sendMessage()">Send</button>
+        <button onclick="human_says()">Send</button>
     </div>
     <script>
         function addMessage(content, isUser) {
@@ -75,7 +75,11 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
-        async function sendMessage() {
+        async function ai_says(content) {
+            addMessage(content, false);
+        }
+
+        async function human_says() {
             const userInput = document.getElementById('user-input');
             const message = userInput.value;
             if (message.trim() === '') return;
@@ -91,13 +95,13 @@
                 body: JSON.stringify({ message: message })
             });
             const data = await response.json();
-            addMessage(data.response, false);
+            ai_says(data.response);
         }
         
         function checkEnter(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();  // Prevent the default newline behavior
-                sendMessage();
+                human_says();
             }
         }
     </script>
