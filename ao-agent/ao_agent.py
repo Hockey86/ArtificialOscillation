@@ -66,7 +66,8 @@ class AOAgent(gym.Env):
         self.llm_name = llm_name
         self.profile_instruction = profile_instruction
         self.memory = Memory()
-        self.planner = Planner(llm_name, profile_instruction)  # includes RL
+        self.planner = Planner(llm_name, profile_instruction)
+        self.rl = Decider()####
         self.actor = Actor()
         self.explainer = Explainer(llm_name, profile_instruction)
         self.human_in_loop = human_in_loop

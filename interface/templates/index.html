@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AO Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+        }
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            overflow-y: scroll;
+        }
+        .chat-bubble {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 10px;
+            max-width: 60%;
+            white-space: pre-wrap; /* Preserve whitespace and line breaks */
+            word-wrap: break-word;  /* Break long words to prevent overflow */
+        }
+        .user-bubble {
+            background-color: #e8bb00; /* #d1e7dd; */
+            align-self: flex-end;
+        }
+        .bot-bubble {
+            background-color: #46b4ff; /* #f8d7da; */
+            align-self: flex-start;
+        }
+        .input-container {
+            display: flex;
+            width: 100%;
+        }
+        .input-container textarea {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 0;
+            resize: none;
+            height: 40px; /* Adjust the height as needed */
+            width: calc(100% - 100px); /* Adjust based on the width of the button */
+        }
+        .input-container button {
+            padding: 10px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container" id="chat-container">
+    </div>
+    <div class="input-container">
+        <textarea id="user-input" placeholder="Type your message here..." onkeydown="checkEnter(event)"></textarea>
+        <button onclick="sendMessage()">Send</button>
+    </div>
+    <script>
+        function addMessage(content, isUser) {
+            const chatContainer = document.getElementById('chat-container');
+            const messageBubble = document.createElement('div');
+            messageBubble.className = 'chat-bubble ' + (isUser ? 'user-bubble' : 'bot-bubble');
+            messageBubble.textContent = content;
+            chatContainer.appendChild(messageBubble);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const userInput = document.getElementById('user-input');
+            const message = userInput.value;
+            if (message.trim() === '') return;
+            
+            addMessage(message, true);
+            userInput.value = '';
+
+            const response = await fetch('/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ message: message })
+            });
+            const data = await response.json();
+            addMessage(data.response, false);
+        }
+        
+        function checkEnter(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();  // Prevent the default newline behavior
+                sendMessage();
+            }
+        }
+    </script>
+</body>
+</html>

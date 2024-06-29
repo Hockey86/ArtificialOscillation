@@ -11,6 +11,7 @@ from langchain_openai import ChatOpenAI
 #pip3 install redis
 #docker run -d -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
 REDIS_URL = "redis://localhost:6379/0"
+import colorama
 from colorama import Fore, Back, Style
 colorama.init()
 
