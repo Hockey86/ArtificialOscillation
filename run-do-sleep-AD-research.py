@@ -1,16 +1,16 @@
 import sys
 sys.path.insert(0, 'ao-agent')
 from ao_agent import AOAgent
-#TODO from interfaces import FlaskInterface
+#from interfaces import FlaskInterface
 
 
 def main():
-    profile = 'Your role is an academic researcher. You are good at understanding the scientific literature and scientific thinking. You are curious about the nature and the underlying mechanisms.'
+    profile = 'Your role is an academic researcher. You are curious about the nature and the underlying mechanisms. You are good at understanding the scientific literature, applying scientific methods (such as hypothesis testing), identifying research gaps, analyzing data, deductive/abductive/inductive reasoning, writing scientific manuscripts and grants, and forming collaborations.'
 
-    task = 'Do scientific research in the field of sleep and dementia. Here, scientific research refers to scientific practice, including searching for academic literature, understanding knowledge structure, identifying research gaps, proposing new directions, etc. However, you are a text-based AI, therefore you cannot actually perform experiments, conduct trials, attend conferences, or form collaborations. However, you can propose how to do them.'
+    task = "Identify research topics in the field of sleep and Alzheimer's disease, and research the topics. You can access a computer via function calls, including Internet, programming software, and text editing software. Since you are not an embodied AI, you cannot actually perform experiments, conduct trials, or attend conferences. Instead, you can propose to do them."
 
-    # define interface
-    #TODO flask_app = FlaskInterface(template_folder='../flask_templates')
+    #TODO define interface
+    # flask_app = FlaskInterface(template_folder='../flask_templates')
 
     # define agent
     ao = AOAgent(name='AO-Sleep-AD-Researcher', llm_name='gpt-4o',
